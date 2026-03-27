@@ -29,7 +29,8 @@ export function useTestEngine() {
         }))
         ElMessage.success(`成功解析出 ${parsedModules.value.length} 个功能模块`)
       } else {
-         ElMessage.error(response?.data?.error || '后端解析失败')
+         const err = response?.data?.error
+         ElMessage.error(err?.message || err || '后端解析失败')
       }
     } catch (error) {
       console.error(error)
@@ -41,7 +42,40 @@ export function useTestEngine() {
 
   // 生成测试点逻辑 (保持不变)
   const handleGenerate = async (moduleData, index) => {
-     // ... 保持原有代码 ...
+    if (!moduleData || !moduleData.content) {
+      ElMessage.warning('该模块缺少可用于生成的内容')
+      return
+    }
+
+    const moduleName = moduleData.level2_module && moduleData.level2_module !== '无'
+      ? moduleData.level2_module
+      : (moduleData.level1_module || '未知模块')
+
+    const functionName = moduleData.level3_function && moduleData.level3_function !== '无'
+      ? moduleData.level3_function
+      : (moduleData.level2_module || '未知功能点')
+
+    moduleData.loading = true
+    moduleData.testPoints = null
+
+    try {
+      const response = await generatePointsApi(moduleData.content, moduleName, functionName)
+      if (response && response.data && response.data.status === 'success') {
+        // 后端返回结构：{ testpoint: { "<function>": ["验证xxx", ...] } }
+        const payload = response.data.data || {}
+        const points = payload.testpoint?.[functionName] || []
+        moduleData.testPoints = points
+        ElMessage.success(`已为 ${functionName} 生成 ${points.length} 条测试点`)
+      } else {
+        const err = response?.data?.error
+        ElMessage.error(err?.message || err || '后端生成失败')
+      }
+    } catch (error) {
+      console.error(error)
+      ElMessage.error('生成测试点请求失败，请检查 Flask 后台日志')
+    } finally {
+      moduleData.loading = false
+    }
   }
 
   return {

@@ -45,15 +45,17 @@ _LLM = _create_llm()
 
 def _classify_error(exc):
     msg = str(exc).lower()
-    if "401" in msg or "unauthorized" in msg or "api key" in msg:
-        return "llm_auth_failed", "大模型鉴权失败，请检查 API Key"
+    # 覆盖中文/下划线等情况，避免落入默认分支导致信息不可读
+    if "openai_api_key" in msg or "未配置" in msg or "api key" in msg or "unauthorized" in msg or "401" in msg:
+        return "llm_auth_failed", "未配置 OPENAI_API_KEY，请在启动后端前设置环境变量"
     if "429" in msg or "rate limit" in msg:
         return "llm_rate_limited", "大模型调用频率受限，请稍后重试"
     if "timed out" in msg or "timeout" in msg:
         return "llm_timeout", "大模型请求超时"
     if "json" in msg or "parse" in msg:
         return "llm_parse_error", "大模型返回结果解析失败"
-    return "llm_call_failed", "大模型调用失败"
+    # 兜底：尽量带上原始异常简要信息（避免前端只看到空泛提示）
+    return "llm_call_failed", f"大模型调用失败：{type(exc).__name__}"
 
 
 def _invoke_with_retry(chain, payload):
@@ -77,6 +79,14 @@ def generate_test_points(context, module_name, function_name):
     """
     调用大模型，根据上下文生成结构化测试点。
     """
+    global _LLM
+    try:
+        if _LLM is None:
+            _LLM = _create_llm()
+    except Exception as exc:
+        code, message = _classify_error(exc)
+        raise LLMServiceError(code, message) from exc
+
     chain = _PROMPT | _LLM | _JSON_PARSER
     payload = {"context": context, "module": module_name, "function": function_name}
 

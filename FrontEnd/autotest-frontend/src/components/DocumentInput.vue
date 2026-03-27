@@ -20,7 +20,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="PDF 上传" name="file">
+      <el-tab-pane label="Markdown/PDF 上传" name="file">
         <el-upload
           class="upload-demo"
           drag
@@ -30,11 +30,11 @@
           :on-change="onFileChange"
           :on-remove="onFileRemove"
           :on-exceed="handleExceed"
-          accept=".pdf"
+          accept=".md,.markdown,.pdf"
         >
           <el-icon class="el-icon--upload"><upload-filled /></el-icon>
           <div class="el-upload__text">
-            将 PDF 文件拖到此处，或 <em>点击选择</em>
+            将 Markdown/PDF 文件拖到此处，或 <em>点击选择</em>
           </div>
           <template #tip>
             <div class="el-upload__tip" style="color: #E6A23C;">
@@ -89,7 +89,7 @@ const handleTriggerParse = () => {
     emit('on-parse', { mode: 'text', content: props.modelValue })
   } else {
     if (!selectedFile.value) {
-      ElMessage.warning('请先选择一个 PDF 文件')
+      ElMessage.warning('请先选择一个 Markdown 或 PDF 文件')
       return
     }
     emit('on-parse', { mode: 'file', file: selectedFile.value })
