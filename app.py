@@ -13,6 +13,7 @@ init_logger()
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# 允许跨域请求，方便前端联调
 CORS(app)
 
 
