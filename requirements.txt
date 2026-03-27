@@ -1,0 +1,6 @@
+Flask
+Flask-Cors
+langchain
+langchain-openai
+langchain-text-splitters
+pypdf
