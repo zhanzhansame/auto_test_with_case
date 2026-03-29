@@ -24,7 +24,9 @@ def success_response(data, **extra):
 
 
 def error_response(code, message, status_code=400):
-    return jsonify({"status": "error", "error": {"code": code, "message": message}}), status_code
+    return jsonify(
+        {"status": "error", "error": {"code": code, "message": message}}
+    ), status_code
 
 
 @app.errorhandler(Exception)
@@ -56,6 +58,10 @@ def analyze_file():
     接收上传文件（md/pdf），返回拆分后的模块列表。
     """
     uploaded_file = request.files.get("file")
+    # 检查对象是否存在
+    if uploaded_file is None or uploaded_file.filename == "":
+        return error_response("no_file", "No file part or no selected file", 400)
+
     try:
         ext = validate_upload_file(uploaded_file)
     except ValueError as exc:
@@ -78,7 +84,9 @@ def analyze_file():
     else:
         return error_response("unsupported_file_type", f"不支持的文件类型: {ext}", 400)
 
-    return success_response(parsed_blocks, total_blocks=len(parsed_blocks), file_type=ext)
+    return success_response(
+        parsed_blocks, total_blocks=len(parsed_blocks), file_type=ext
+    )
 
 
 @app.route("/api/generate_points", methods=["POST"])

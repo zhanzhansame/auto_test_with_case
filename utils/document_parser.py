@@ -1,4 +1,4 @@
-from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 
 def _build_block(idx, content, level1="无", level2="无", level3="无"):
