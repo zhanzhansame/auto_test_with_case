@@ -25,7 +25,8 @@ export function useTestEngine() {
         parsedModules.value = response.data.data.map(item => ({
           ...item,
           loading: false,
-          testPoints: null
+          testPoints: null,
+          testCases: null
         }))
         ElMessage.success(`成功解析出 ${parsedModules.value.length} 个功能模块`)
       } else {
@@ -57,15 +58,30 @@ export function useTestEngine() {
 
     moduleData.loading = true
     moduleData.testPoints = null
+    moduleData.testCases = null
 
     try {
       const response = await generatePointsApi(moduleData.content, moduleName, functionName)
       if (response && response.data && response.data.status === 'success') {
-        // 后端返回结构：{ testpoint: { "<function>": ["验证xxx", ...] } }
         const payload = response.data.data || {}
-        const points = payload.testpoint?.[functionName] || []
-        moduleData.testPoints = points
-        ElMessage.success(`已为 ${functionName} 生成 ${points.length} 条测试点`)
+        // 新 prompt：{ test_cases: [ { case_id, case_name, steps, ... } ] }
+        // 旧格式：{ testpoint: { "<function>": ["验证xxx", ...] } }
+        let cases = []
+        if (Array.isArray(payload.test_cases) && payload.test_cases.length) {
+          cases = payload.test_cases
+        } else if (payload.testpoint?.[functionName]?.length) {
+          cases = payload.testpoint[functionName].map((name) => ({
+            case_name: name,
+            steps: [],
+            expected_results: []
+          }))
+        }
+        moduleData.testCases = cases.length ? cases : null
+        moduleData.testPoints = cases.length
+          ? cases.map((c) => c.case_name).filter(Boolean)
+          : (payload.testpoint?.[functionName] || [])
+        const count = cases.length || moduleData.testPoints.length
+        ElMessage.success(`已为 ${functionName} 生成 ${count} 条测试用例`)
       } else {
         const err = response?.data?.error
         ElMessage.error(err?.message || err || '后端生成失败')

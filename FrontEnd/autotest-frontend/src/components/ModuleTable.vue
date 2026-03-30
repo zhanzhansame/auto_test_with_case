@@ -11,8 +11,8 @@
       <el-table-column prop="level3_function" label="功能点" />
       <el-table-column label="操作" width="120" align="center">
         <template #default="scope">
-          <el-button 
-            v-if="!scope.row.testPoints" 
+          <el-button
+            v-if="!scope.row.testPoints && !scope.row.testCases"
             size="small" type="primary" plain
             :loading="scope.row.loading"
             @click="$emit('on-generate', scope.row, scope.$index)"

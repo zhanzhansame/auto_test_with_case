@@ -9,13 +9,11 @@ from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
 
-
 class LLMServiceError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
         self.message = message
-
 
 def _load_prompt_template():
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -53,15 +51,17 @@ def _create_llm():
         base_url=config.get("openai_api_base", "https://open.bigmodel.cn/api/paas/v4/"),
         timeout=float(config.get("llm_timeout_seconds", "30")),
         max_retries=0,
+        #强制开启JSON输出模式，防止模型返回```json... ```影响解析
+        model_kwargs = {"response_format": {"type": "json_object"}}
     )
 
-
+# 延迟初始化 LLM，避免在模块导入阶段因配置缺失导致程序崩溃
 _PROMPT_TEMPLATE = _load_prompt_template()
 _PROMPT = PromptTemplate(
     template=_PROMPT_TEMPLATE, input_variables=["context", "module", "function"]
 )
 _JSON_PARSER = JsonOutputParser()
-_LLM = _create_llm()
+_LLM = None
 
 
 def _classify_error(exc):
@@ -121,6 +121,19 @@ def generate_test_points(context, module_name, function_name):
 
     chain = _PROMPT | _LLM | _JSON_PARSER
     payload = {"context": context, "module": module_name, "function": function_name}
+
+    # 记录一次调用关键信息，便于排查超时/异常
+    try:
+        ctx_preview = (context or "")[:200].replace("\n", "\\n")
+        logger.info(
+            "LLM 请求参数: module=%r, function=%r, context_preview=%s...",
+            module_name,
+            function_name,
+            ctx_preview,
+        )
+    except Exception:
+        # 日志本身不影响主流程
+        logger.debug("记录 LLM 请求参数时发生非致命异常", exc_info=True)
 
     try:
         return _invoke_with_retry(chain, payload)
