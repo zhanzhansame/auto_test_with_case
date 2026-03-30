@@ -21,12 +21,25 @@
         </el-col>
 
         <el-col :span="14" v-if="parsedModules.length > 0">
+          <el-card class="box-card" style="margin-bottom: 16px;">
+            <div style="display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
+              <el-button type="primary" plain @click="downloadParsedMarkdown">导出需求 Markdown</el-button>
+              <el-button type="primary" plain @click="downloadParsedCsv">导出需求 Excel</el-button>
+              <el-button type="success" @click="downloadTestCasesCsv" :disabled="!hasGeneratedCases">下载测试用例 Excel</el-button>
+              <el-button type="success" plain @click="downloadTestCasesMarkdown" :disabled="!hasGeneratedCases">
+                下载测试用例 Markdown
+              </el-button>
+            </div>
+          </el-card>
           <ModuleTable 
             :modules="parsedModules" 
             @on-generate="handleGenerate" 
           />
           <PointsPreview 
-            :modules="parsedModules" 
+            :modules="parsedModules"
+            @on-delete-case="deleteTestCase"
+            @on-delete-module="deleteModule"
+            @on-update-case="updateCaseField"
           />
         </el-col>
         
@@ -45,8 +58,16 @@ const {
   markdownContent, 
   parsedModules, 
   isParsing, 
+  hasGeneratedCases,
   handleParse, 
-  handleGenerate 
+  handleGenerate,
+  updateCaseField,
+  deleteTestCase,
+  deleteModule,
+  downloadParsedMarkdown,
+  downloadParsedCsv,
+  downloadTestCasesCsv,
+  downloadTestCasesMarkdown
 } = useTestEngine()
 </script>
 

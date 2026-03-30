@@ -1,8 +1,17 @@
 import unittest
 
-from utils.document_parser import parse_document_text, split_markdown_document
+try:
+    from utils.document_parser import parse_document_text, split_markdown_document
+
+    _HAS_DOC_PARSER_DEPS = True
+except ModuleNotFoundError as exc:
+    parse_document_text = None
+    split_markdown_document = None
+    _HAS_DOC_PARSER_DEPS = False
+    _DOC_PARSER_IMPORT_ERROR = exc
 
 
+@unittest.skipUnless(_HAS_DOC_PARSER_DEPS, f"缺少文档解析依赖：{_DOC_PARSER_IMPORT_ERROR}")
 class TestDocumentParser(unittest.TestCase):
     def test_split_markdown_document(self):
         md = "# 模块A\n## 子模块B\n### 功能C\n这里是需求描述"

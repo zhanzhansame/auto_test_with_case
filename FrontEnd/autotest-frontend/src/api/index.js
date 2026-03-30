@@ -28,3 +28,13 @@ export const generatePointsApi = (content, moduleName, functionName) => {
     function: functionName
   })
 }
+
+// 4. 后端需求导出接口
+export const exportRequirementsApi = (modules, format = 'xlsx') => {
+  return apiClient.post('/export/requirements', { modules, format }, { responseType: 'blob' })
+}
+
+// 5. 后端测试用例导出接口
+export const exportTestCasesApi = (modules, format = 'xlsx') => {
+  return apiClient.post('/export/testcases', { modules, format }, { responseType: 'blob' })
+}

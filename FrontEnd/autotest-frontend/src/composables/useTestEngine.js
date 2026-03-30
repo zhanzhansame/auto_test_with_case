@@ -1,13 +1,49 @@
-import { ref } from 'vue'
-import { parseDocumentApi, uploadDocumentApi, generatePointsApi } from '../api'
+import { computed, ref } from 'vue'
+import { parseDocumentApi, uploadDocumentApi, generatePointsApi, exportRequirementsApi, exportTestCasesApi } from '../api'
 import { ElMessage } from 'element-plus'
+
+const downloadBlob = (content, filename, type) => {
+  const blob = new Blob([content], { type })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(link.href)
+}
+
+const downloadResponseFile = (response, fallbackFilename) => {
+  const blob = new Blob([response.data], { type: response.data.type || 'application/octet-stream' })
+  let filename = fallbackFilename
+  const disposition = response.headers['content-disposition'] || response.headers['Content-Disposition']
+  if (disposition) {
+    const filenameMatch = disposition.match(/filename\*=UTF-8''(.+)|filename="?([^";]+)"?/)
+    if (filenameMatch) {
+      filename = decodeURIComponent(filenameMatch[1] || filenameMatch[2])
+    }
+  }
+  downloadBlob(blob, filename, blob.type)
+}
+
+const normalizeTestCase = (rawCase, index) => ({
+  case_id: rawCase.case_id || `C${index + 1}`,
+  case_name: rawCase.case_name || rawCase.name || `用例 ${index + 1}`,
+  preconditions: rawCase.preconditions || rawCase.pre_condition || rawCase.precondition || '',
+  summary: rawCase.summary || rawCase.description || '',
+  steps: Array.isArray(rawCase.steps) ? rawCase.steps : [],
+  expected_results: Array.isArray(rawCase.expected_results) ? rawCase.expected_results : [],
+})
 
 export function useTestEngine() {
   const markdownContent = ref('')
   const parsedModules = ref([])
   const isParsing = ref(false)
 
-  // 接收从 DocumentInput 传来的 Payload
+  const hasGeneratedCases = computed(() => {
+    return parsedModules.value.some((m) => (Array.isArray(m.testCases) && m.testCases.length > 0) || (Array.isArray(m.testPoints) && m.testPoints.length > 0))
+  })
+
   const handleParse = async (payload) => {
     isParsing.value = true
     try {
@@ -41,7 +77,7 @@ export function useTestEngine() {
     }
   }
 
-  // 生成测试点逻辑 (保持不变)
+  // 生成测试点逻辑
   const handleGenerate = async (moduleData, index) => {
     if (!moduleData || !moduleData.content) {
       ElMessage.warning('该模块缺少可用于生成的内容')
@@ -64,8 +100,6 @@ export function useTestEngine() {
       const response = await generatePointsApi(moduleData.content, moduleName, functionName)
       if (response && response.data && response.data.status === 'success') {
         const payload = response.data.data || {}
-        // 新 prompt：{ test_cases: [ { case_id, case_name, steps, ... } ] }
-        // 旧格式：{ testpoint: { "<function>": ["验证xxx", ...] } }
         let cases = []
         if (Array.isArray(payload.test_cases) && payload.test_cases.length) {
           cases = payload.test_cases
@@ -76,10 +110,9 @@ export function useTestEngine() {
             expected_results: []
           }))
         }
-        moduleData.testCases = cases.length ? cases : null
-        moduleData.testPoints = cases.length
-          ? cases.map((c) => c.case_name).filter(Boolean)
-          : (payload.testpoint?.[functionName] || [])
+
+        moduleData.testCases = cases.length ? cases.map((c, idx) => normalizeTestCase(c, idx)) : null
+        moduleData.testPoints = cases.length ? moduleData.testCases.map((c) => c.case_name).filter(Boolean) : (payload.testpoint?.[functionName] || [])
         const count = cases.length || moduleData.testPoints.length
         ElMessage.success(`已为 ${functionName} 生成 ${count} 条测试用例`)
       } else {
@@ -94,11 +127,98 @@ export function useTestEngine() {
     }
   }
 
+  const updateCaseField = (moduleIndex, caseIndex, field, value) => {
+    const moduleItem = parsedModules.value[moduleIndex]
+    if (!moduleItem || !moduleItem.testCases || !moduleItem.testCases[caseIndex]) return
+    if (field === 'steps' || field === 'expected_results') {
+      moduleItem.testCases[caseIndex][field] = value
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line)
+    } else {
+      moduleItem.testCases[caseIndex][field] = value
+    }
+  }
+
+  const deleteTestCase = (moduleIndex, caseIndex) => {
+    const moduleItem = parsedModules.value[moduleIndex]
+    if (!moduleItem || !moduleItem.testCases) return
+    moduleItem.testCases.splice(caseIndex, 1)
+  }
+
+  const deleteModule = (moduleIndex) => {
+    parsedModules.value.splice(moduleIndex, 1)
+  }
+
+  const downloadParsedMarkdown = async () => {
+    if (!parsedModules.value.length) {
+      ElMessage.warning('当前没有可导出的需求内容')
+      return
+    }
+    try {
+      const response = await exportRequirementsApi(parsedModules.value, 'md')
+      downloadResponseFile(response, 'parsed_requirements.md')
+    } catch (error) {
+      console.error(error)
+      ElMessage.error('导出需求 Markdown 失败，请检查后端接口')
+    }
+  }
+
+  const downloadParsedCsv = async () => {
+    if (!parsedModules.value.length) {
+      ElMessage.warning('当前没有可导出的需求内容')
+      return
+    }
+    try {
+      const response = await exportRequirementsApi(parsedModules.value, 'xlsx')
+      downloadResponseFile(response, 'parsed_requirements.xlsx')
+    } catch (error) {
+      console.error(error)
+      ElMessage.error('导出需求 Excel 失败，请检查后端接口')
+    }
+  }
+
+  const downloadTestCasesCsv = async () => {
+    if (!hasGeneratedCases.value) {
+      ElMessage.warning('当前没有可下载的测试用例')
+      return
+    }
+    try {
+      const response = await exportTestCasesApi(parsedModules.value, 'xlsx')
+      downloadResponseFile(response, 'test_cases.xlsx')
+    } catch (error) {
+      console.error(error)
+      ElMessage.error('下载测试用例 Excel 失败，请检查后端接口')
+    }
+  }
+
+  const downloadTestCasesMarkdown = async () => {
+    if (!hasGeneratedCases.value) {
+      ElMessage.warning('当前没有可下载的测试用例')
+      return
+    }
+    try {
+      const response = await exportTestCasesApi(parsedModules.value, 'md')
+      downloadResponseFile(response, 'test_cases.md')
+    } catch (error) {
+      console.error(error)
+      ElMessage.error('下载测试用例 Markdown 失败，请检查后端接口')
+    }
+  }
+
   return {
     markdownContent,
     parsedModules,
     isParsing,
+    hasGeneratedCases,
     handleParse,
-    handleGenerate
+    handleGenerate,
+    updateCaseField,
+    deleteTestCase,
+    deleteModule,
+    downloadParsedMarkdown,
+    downloadParsedCsv,
+    downloadTestCasesCsv,
+    downloadTestCasesMarkdown
   }
 }

@@ -1,10 +1,19 @@
+import io
 import logging
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
 from common.logger import init_logger
 from services.llm_service import LLMServiceError, generate_test_points
+from services.export_service import (
+    build_requirements_csv,
+    build_requirements_markdown,
+    build_requirements_xlsx_bytes,
+    build_testcases_csv,
+    build_testcases_markdown,
+    build_testcases_xlsx_bytes,
+)
 from utils.document_parser import parse_document_text
 from utils.file_validators import validate_upload_file
 from utils.pdf_parser import extract_text_from_pdf_bytes
@@ -27,6 +36,21 @@ def error_response(code, message, status_code=400):
     return jsonify(
         {"status": "error", "error": {"code": code, "message": message}}
     ), status_code
+
+
+def parse_modules_or_body(data):
+    modules = data.get("modules")
+    if isinstance(modules, list) and modules:
+        return modules
+
+    content = data.get("content", "")
+    file_type = data.get("file_type")
+    if isinstance(content, str) and content.strip():
+        if not file_type:
+            raise ValueError("缺少 file_type 参数")
+        return parse_document_text(content, file_type)
+
+    raise ValueError("缺少模块数据或文档内容")
 
 
 @app.errorhandler(Exception)
@@ -110,6 +134,104 @@ def generate_points():
         return success_response(test_points)
     except LLMServiceError as exc:
         return error_response(exc.code, exc.message, 502)
+
+
+@app.route('/api/export/requirements', methods=['POST'])
+def export_requirements():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response('invalid_payload', '请求体必须是 JSON 对象', 400)
+
+    try:
+        modules = parse_modules_or_body(data)
+    except ValueError as exc:
+        return error_response('invalid_payload', str(exc), 400)
+
+    fmt = (data.get('format') or 'xlsx').strip().lower()
+    if fmt == 'md':
+        markdown_content = build_requirements_markdown(modules)
+        buffer = io.BytesIO(markdown_content.encode('utf-8'))
+        return send_file(
+            buffer,
+            mimetype='text/markdown; charset=utf-8',
+            download_name='requirements.md',
+            as_attachment=True
+        )
+    if fmt == 'csv':
+        csv_content = build_requirements_csv(modules)
+        buffer = io.BytesIO(csv_content.encode('utf-8'))
+        return send_file(
+            buffer,
+            mimetype='text/csv; charset=utf-8',
+            download_name='requirements.csv',
+            as_attachment=True
+        )
+    if fmt == 'xlsx':
+        buffer = build_requirements_xlsx_bytes(modules)
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            download_name='requirements.xlsx',
+            as_attachment=True
+        )
+    return error_response('invalid_format', '仅支持 md / csv / xlsx 格式', 400)
+
+
+@app.route('/api/export/testcases', methods=['POST'])
+def export_testcases():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response('invalid_payload', '请求体必须是 JSON 对象', 400)
+
+    try:
+        modules = parse_modules_or_body(data)
+    except ValueError as exc:
+        return error_response('invalid_payload', str(exc), 400)
+
+    fmt = (data.get('format') or 'xlsx').strip().lower()
+
+    has_any_testcases = False
+    for module in modules:
+        if isinstance(module.get("testCases"), list) and module.get("testCases"):
+            has_any_testcases = True
+            break
+        if isinstance(module.get("testPoints"), list) and module.get("testPoints"):
+            has_any_testcases = True
+            break
+
+    if not has_any_testcases:
+        return error_response('no_test_cases', '当前没有可导出的测试用例', 400)
+
+    if fmt == 'md':
+        md_content = build_testcases_markdown(modules)
+        buffer = io.BytesIO(md_content.encode('utf-8'))
+        return send_file(
+            buffer,
+            mimetype='text/markdown; charset=utf-8',
+            download_name='test_cases.md',
+            as_attachment=True
+        )
+
+    if fmt == 'csv':
+        csv_content = build_testcases_csv(modules)
+        buffer = io.BytesIO(csv_content.encode('utf-8'))
+        return send_file(
+            buffer,
+            mimetype='text/csv; charset=utf-8',
+            download_name='test_cases.csv',
+            as_attachment=True
+        )
+
+    if fmt == 'xlsx':
+        buffer = build_testcases_xlsx_bytes(modules)
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            download_name='test_cases.xlsx',
+            as_attachment=True
+        )
+
+    return error_response('invalid_format', '仅支持 md / csv / xlsx 格式', 400)
 
 
 if __name__ == "__main__":
